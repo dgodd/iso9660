@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -exuo pipefail
+
+tmpdir=`mktemp -d`
+function cleanup {
+  rm  -r $tmpdir
+}
+trap cleanup EXIT
+DIR=$(cd "$( dirname "${BASH_SOURCE[0]}" )/"; pwd)
+
+cd "$tmpdir"
+echo some content > file1.txt
+mkdir dir1
+mkdir dir2
+mkdir dir2/dir3
+mkdir -p long_dir_name/long_sub_dir_name
+echo some content 1 > file1.txt
+echo some content 2 > dir1/file2.txt
+echo some content 3 > dir2/file3.txt
+echo some content 4 > dir2/dir3/file4.txt
+echo some content 5 > dir2/dir3/file5.txt
+echo some content 6 > dir2/long_file_name.txt
+echo some content 7 > long_dir_name/long_sub_dir_name/long_file_name_2.txt
+
+mkisofs -rock -o "$DIR"/test.iso .
