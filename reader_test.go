@@ -1,7 +1,6 @@
 package iso9660_test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/dgodd/iso9660"
@@ -22,7 +21,40 @@ func testISO9660(t *testing.T, when spec.G, it spec.S) {
 			entries, err := subject.ReadDir("/")
 			assertNil(t, err)
 
-			fmt.Println(entries)
+			names := make([]string, len(entries))
+			for i, e := range entries {
+				names[i] = e.ID
+			}
+
+			assertEq(t, names, []string{"\x00", "\x01", "dir1", "dir2", "file1.txt"})
+		})
+		it("reads sub dirs", func() {
+			subject, err := iso9660.New("./testdata/test.iso")
+			assertNil(t, err)
+
+			entries, err := subject.ReadDir("/DIR1")
+			assertNil(t, err)
+
+			names := make([]string, len(entries))
+			for i, e := range entries {
+				names[i] = e.ID
+			}
+
+			assertEq(t, names, []string{"\x00", "\x01", "file2.txt"})
+		})
+		it("reads sub dirs with long names", func() {
+			subject, err := iso9660.New("./testdata/test.iso")
+			assertNil(t, err)
+
+			entries, err := subject.ReadDir("/DIR2")
+			assertNil(t, err)
+
+			names := make([]string, len(entries))
+			for i, e := range entries {
+				names[i] = e.ID
+			}
+
+			assertEq(t, names, []string{"\x00", "\x01", "dir3", "file3.txt", "long_file_name.txt"})
 		})
 	})
 	when("#AllDirs", func() {

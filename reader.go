@@ -74,8 +74,39 @@ func New(path string) (*Reader, error) {
 	return r, nil
 }
 
-func (r *Reader) ReadDir(_dirname string) ([]DirEntry, error) {
-	return nil, nil
+func (r *Reader) ReadDir(path string) ([]DirEntry, error) {
+	var pathEntry *PathEntry
+	for _, p := range r.paths {
+		if p.FullPath == path {
+			pathEntry = &p
+			break
+		}
+	}
+	if pathEntry == nil {
+		return nil, fmt.Errorf("path not found: %s", path)
+	}
+
+	b := make([]byte, 2048)
+	if _, err := r.f.ReadAt(b, int64(pathEntry.LBA*2048)); err != nil {
+		return nil, errors.Wrapf(err, "reading lba for: %s", path)
+	}
+	offset := int64(0)
+	var dirEntry DirEntry
+	var dirs []DirEntry
+	for {
+		if offset >= 2048 {
+			break
+		}
+		parseDirEntry(b[offset:], &dirEntry)
+		if dirEntry.Length == 0 {
+			break
+		}
+		// fmt.Printf("DIR: %#v\n", dirEntry)
+		dirs = append(dirs, dirEntry)
+		offset += int64(dirEntry.Length)
+	}
+
+	return dirs, nil
 }
 
 type PathEntry struct {
@@ -216,4 +247,53 @@ func parseDirEntry(b []byte, e *DirEntry) {
 	e.RecordingDate = parseTime(b[18:25])
 	e.IDLength = b[32]
 	e.ID = string(b[33:(33 + e.IDLength)])
+
+	if len(e.ID) > 2 && e.ID[len(e.ID)-2] == ';' {
+		// fmt.Println("EID:", e.ID)
+		e.ID = e.ID[:(len(e.ID) - 2)]
+	}
+
+	offset := 33 + e.IDLength
+	if e.IDLength%2 == 0 {
+		offset++
+	}
+	if offset < e.Length {
+		// fmt.Printf("E: %#v\n", e)
+		// fmt.Printf("B: %v\n", b[offset:(e.Length-offset)])
+		// fmt.Printf("S: %s\n", b[offset:(e.Length-offset)])
+		rr, err := parseSUSP(b[offset:(e.Length - offset)])
+		if err == nil && rr.Name != "" {
+			e.ID = rr.Name
+		}
+	}
+}
+
+type RR struct {
+	Name string
+}
+
+func parseSUSP(b []byte) (RR, error) {
+	offset := int64(0)
+	var rr RR
+	for {
+		if offset >= int64(len(b)) {
+			break
+		}
+		sig := string(b[offset:(offset + 2)])
+		len := b[offset+2]
+		if b[offset+3] != 1 {
+			return RR{}, fmt.Errorf("expected version == 1 in SUSP record: %d", b[offset+3])
+		}
+		switch sig {
+		case "RR":
+			// no-op
+		case "NM":
+			rr.Name = string(b[(offset + 5):(offset + int64(len))])
+		default:
+			// fmt.Println(string(sig), len)
+			// fmt.Println(b[offset:(offset + int64(len))])
+		}
+		offset += int64(len)
+	}
+	return rr, nil
 }
