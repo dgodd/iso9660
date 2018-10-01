@@ -3,16 +3,18 @@ package iso9660
 import (
 	"encoding/binary"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
+	mmap "github.com/edsrzf/mmap-go"
 	"github.com/pkg/errors"
-	"golang.org/x/exp/mmap"
 )
 
 type Reader struct {
-	f     *mmap.ReaderAt
-	vp    VolumePrimary
-	paths []PathEntry
+	fh *os.File
+	m  mmap.MMap
+	vp VolumePrimary
 }
 
 type VolumePrimary struct {
@@ -60,48 +62,64 @@ type DirEntry struct {
 }
 
 func New(path string) (*Reader, error) {
-	f, err := mmap.Open(path)
+	fh, err := os.Open(path)
 	if err != nil {
 		return nil, errors.Wrapf(err, "opening %s as mmaped iso file", path)
 	}
-	r := &Reader{f: f}
-	if err := r.readVolumePrimary(); err != nil {
-		return nil, err
+	m, err := mmap.Map(fh, mmap.RDONLY, 0)
+	if err != nil {
+		return nil, errors.Wrapf(err, "opening %s as mmaped iso file", path)
 	}
-	if err := r.readPathTable(); err != nil {
+	r := &Reader{fh: fh, m: m}
+	if err := r.readVolumePrimary(); err != nil {
 		return nil, err
 	}
 	return r, nil
 }
 
+func (r *Reader) Close() error {
+	e1 := r.m.Unmap()
+	e2 := r.fh.Close()
+	if e1 != nil {
+		return e1
+	}
+	return e2
+}
+
 func (r *Reader) ReadDir(path string) ([]DirEntry, error) {
-	var pathEntry *PathEntry
-	for _, p := range r.paths {
-		if p.FullPath == path {
-			pathEntry = &p
-			break
+	var lbaStart, lbaLength int64
+	if path == "/" || path == "" {
+		lbaStart = int64(r.vp.DirectoryEntryRoot.ExtentLocation) * 2048
+		lbaLength = int64(r.vp.DirectoryEntryRoot.ExtentLength)
+	} else {
+		base := filepath.Base(path)
+		dirs, err := r.ReadDir(filepath.Dir(path))
+		if err != nil {
+			return nil, err
+		}
+		for _, dir := range dirs {
+			if dir.ID == base {
+				lbaStart = int64(dir.ExtentLocation) * 2048
+				lbaLength = int64(dir.ExtentLength)
+				break
+			}
 		}
 	}
-	if pathEntry == nil {
-		return nil, fmt.Errorf("path not found: %s", path)
+	if lbaLength == 0 {
+		return nil, fmt.Errorf("dir not found: %s", path)
 	}
-
-	b := make([]byte, 2048)
-	if _, err := r.f.ReadAt(b, int64(pathEntry.LBA*2048)); err != nil {
-		return nil, errors.Wrapf(err, "reading lba for: %s", path)
-	}
-	offset := int64(0)
+	b := r.m[lbaStart:(lbaStart + lbaLength)]
 	var dirEntry DirEntry
 	var dirs []DirEntry
+	var offset int64
 	for {
-		if offset >= 2048 {
+		if offset >= int64(r.vp.DirectoryEntryRoot.ExtentLength) {
 			break
 		}
 		parseDirEntry(b[offset:], &dirEntry)
 		if dirEntry.Length == 0 {
 			break
 		}
-		// fmt.Printf("DIR: %#v\n", dirEntry)
 		dirs = append(dirs, dirEntry)
 		offset += int64(dirEntry.Length)
 	}
@@ -109,66 +127,8 @@ func (r *Reader) ReadDir(path string) ([]DirEntry, error) {
 	return dirs, nil
 }
 
-type PathEntry struct {
-	Name      string
-	LBA       uint32
-	EARLength byte
-	Parent    uint16
-	// Children  []*PathEntry
-	FullPath string
-}
-
-func (r *Reader) readPathTable() error {
-	b := make([]byte, r.vp.PathTableSize)
-	if _, err := r.f.ReadAt(b, int64(r.vp.LocationTypePathTable*2048)); err != nil {
-		return errors.Wrap(err, "reading path table")
-	}
-	offset := int64(0)
-	for {
-		if offset >= int64(r.vp.PathTableSize) || b[offset] == 0 {
-			break
-		}
-		length := b[offset]
-		earLength := b[offset+1]
-		lba := binary.LittleEndian.Uint32(b[(offset + 2):(offset + 6)])
-		parent := binary.LittleEndian.Uint16(b[(offset + 6):(offset + 8)])
-		name := string(b[(offset + 8):(offset + 8 + int64(length))])
-		// fmt.Printf("DIR: %#v\n", dirEntry)
-		// fmt.Println("PT:", length, earLength, lba, parent, name)
-		offset += 8 + int64(length)
-		if length%2 == 1 {
-			offset++
-		}
-
-		r.paths = append(r.paths, PathEntry{
-			Name:      name,
-			LBA:       lba,
-			EARLength: earLength,
-			Parent:    parent,
-		})
-		if len(r.paths) > 1 {
-			r.paths[len(r.paths)-1].FullPath = r.paths[parent-1].FullPath + "/" + name
-		}
-	}
-	if len(r.paths) > 0 {
-		r.paths[0].FullPath = "/"
-	}
-	return nil
-}
-
-func (r *Reader) AllDirs() []string {
-	arr := make([]string, len(r.paths))
-	for i, p := range r.paths {
-		arr[i] = p.FullPath
-	}
-	return arr
-}
-
 func (r *Reader) readVolumePrimary() error {
-	b := make([]byte, 2048)
-	if _, err := r.f.ReadAt(b, 32768); err != nil {
-		return err
-	}
+	b := r.m[32768:(32768 + 2048)]
 	if b[0] == 255 {
 		return errors.New("no volumes found in iso")
 	}
@@ -225,10 +185,7 @@ func (r *Reader) readVolumePrimary() error {
 	// // fmt.Printf("VolumeEffectiveDateTime: %v\n", r.vp.VolumeEffectiveDateTime)
 	// fmt.Printf("FileStructureVersion: %v\n", r.vp.FileStructureVersion)
 
-	if _, err := r.f.ReadAt(b, 32768+2048); err != nil {
-		return err
-	}
-	if b[0] != 255 {
+	if r.m[32768+2048] != 255 {
 		return errors.New("expected to only find one volume")
 	}
 	return nil
