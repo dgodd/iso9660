@@ -4,6 +4,9 @@ go:
 env:
   global:
   - GO111MODULE=on
+os:
+- linux
+- osx
 install: true
 script:
-- go test 1 -v ./...
+- go test -v ./...
