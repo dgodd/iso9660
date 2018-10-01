@@ -2,9 +2,9 @@ clone_folder: c:\gopath\src\github.com\$username\$project
 
 environment:
   GOPATH: c:\gopath
-  GO111MODULE: on
 
-stack: go 1.11
+stack: go 1.10
 
 test_script:
-  - go test ./...
+  - go get -u ./...
+  - go test
