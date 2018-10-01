@@ -6,4 +6,4 @@ init:
 build: false
 deploy: false
 test_script:
-  - go test .
+  - go test -v ./...
