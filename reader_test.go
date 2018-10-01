@@ -28,21 +28,7 @@ func testISO9660(t *testing.T, when spec.G, it spec.S) {
 
 			assertEq(t, names, []string{"\x00", "\x01", "dir1", "dir2", "file1.txt"})
 		})
-		it("reads sub dirs", func() {
-			subject, err := iso9660.New("./testdata/test.iso")
-			assertNil(t, err)
-
-			entries, err := subject.ReadDir("/DIR1")
-			assertNil(t, err)
-
-			names := make([]string, len(entries))
-			for i, e := range entries {
-				names[i] = e.ID
-			}
-
-			assertEq(t, names, []string{"\x00", "\x01", "file2.txt"})
-		})
-		it("reads sub dirs with long names", func() {
+		it.Focus("reads sub dirs", func() {
 			subject, err := iso9660.New("./testdata/test.iso")
 			assertNil(t, err)
 
@@ -55,6 +41,20 @@ func testISO9660(t *testing.T, when spec.G, it spec.S) {
 			}
 
 			assertEq(t, names, []string{"\x00", "\x01", "dir3", "file3.txt", "long_file_name.txt"})
+		})
+		it.Focus("reads sub dirs with long names", func() {
+			subject, err := iso9660.New("./testdata/test.iso")
+			assertNil(t, err)
+
+			entries, err := subject.ReadDir("/long_dir_name/long_sub_dir_name")
+			assertNil(t, err)
+
+			names := make([]string, len(entries))
+			for i, e := range entries {
+				names[i] = e.ID
+			}
+
+			assertEq(t, names, []string{"\x00", "\x01", "long_file_name_2.txt"})
 		})
 	})
 	when("#AllDirs", func() {
