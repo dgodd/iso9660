@@ -3,8 +3,6 @@ environment:
   GO111MODULE: on
 init:
   - git config --global core.autocrlf input
-install:
-  - go version
 build: false
 deploy: false
 test_script:

@@ -88,7 +88,7 @@ func (r *Reader) Close() error {
 
 func (r *Reader) ReadDir(path string) ([]DirEntry, error) {
 	var lbaStart, lbaLength int64
-	if path == "/" || path == "" {
+	if path == "/" || path == "\\" || path == "" {
 		lbaStart = int64(r.vp.DirectoryEntryRoot.ExtentLocation) * 2048
 		lbaLength = int64(r.vp.DirectoryEntryRoot.ExtentLength)
 	} else {
