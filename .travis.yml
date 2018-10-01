@@ -1,0 +1,9 @@
+language: go
+go:
+- 1.11.x
+env:
+  global:
+  - GO111MODULE=on
+install: true
+script:
+- go test 1 -v ./...
