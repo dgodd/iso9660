@@ -127,6 +127,30 @@ func (r *Reader) ReadDir(path string) ([]DirEntry, error) {
 	return dirs, nil
 }
 
+func (r *Reader) ReadFile(path string) ([]byte, error) {
+	entry, err := r.entry(path)
+	if err != nil {
+		return nil, errors.Wrap(err, "ReadFile")
+	}
+	offset := entry.ExtentLocation * 2048
+	length := entry.ExtentLength
+	return r.m[offset:(offset + length)], nil
+}
+
+func (r *Reader) entry(path string) (DirEntry, error) {
+	base := filepath.Base(path)
+	entries, err := r.ReadDir(filepath.Dir(path))
+	if err != nil {
+		return DirEntry{}, err
+	}
+	for _, e := range entries {
+		if e.ID == base {
+			return e, nil
+		}
+	}
+	return DirEntry{}, fmt.Errorf("not found: %s", path)
+}
+
 func (r *Reader) readVolumePrimary() error {
 	b := r.m[32768:(32768 + 2048)]
 	if b[0] == 255 {

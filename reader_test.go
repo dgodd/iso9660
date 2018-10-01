@@ -13,18 +13,18 @@ func TestISO9660(t *testing.T) {
 }
 
 func testISO9660(t *testing.T, when spec.G, it spec.S) {
-	when("#ReadDir", func() {
-		when("iso file exists", func() {
-			var subject *iso9660.Reader
-			it.Before(func() {
-				var err error
-				subject, err = iso9660.New("./testdata/test.iso")
-				assertNil(t, err)
-			})
-			it.After(func() {
-				assertNil(t, subject.Close())
-			})
+	when("iso file exists", func() {
+		var subject *iso9660.Reader
+		it.Before(func() {
+			var err error
+			subject, err = iso9660.New("./testdata/test.iso")
+			assertNil(t, err)
+		})
+		it.After(func() {
+			assertNil(t, subject.Close())
+		})
 
+		when("#ReadDir", func() {
 			it("reads the root dir", func() {
 				entries, err := subject.ReadDir("/")
 				assertNil(t, err)
@@ -57,6 +57,21 @@ func testISO9660(t *testing.T, when spec.G, it spec.S) {
 				}
 
 				assertEq(t, names, []string{"\x00", "\x01", "long_file_name_2.txt"})
+			})
+		})
+
+		when("#ReadFile", func() {
+			when("file exists", func() {
+				it("returns the bytes", func() {
+					b, err := subject.ReadFile("/file1.txt")
+					assertNil(t, err)
+					assertEq(t, string(b), "some content 1\n")
+				})
+				it("returns the bytes for nested files", func() {
+					b, err := subject.ReadFile("/long_dir_name/long_sub_dir_name/long_file_name_2.txt")
+					assertNil(t, err)
+					assertEq(t, string(b), "some content 7\n")
+				})
 			})
 		})
 	})
